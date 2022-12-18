@@ -45,6 +45,9 @@ vector<Traveler> travelerList;
 vector<SlidingPartition> partitionList;
 GridPosition	exitPos;	//	location of the exit
 
+unsigned int INT_MAX = 1;
+unsigned int GrowTailDistance = 0;
+
 //	travelers' sleep time between moves (in microseconds)
 const int MIN_SLEEP_TIME = 1000;
 int travelerSleepTime = 100000;
@@ -176,9 +179,16 @@ int main(int argc, char* argv[])
 	//	to be the width (number of columns) and height (number of rows) of the
 	//	grid, the number of travelers, etc.
 	//	So far, I hard code-some values
-	numRows = 40;
-	numCols = 45;
-	numTravelers = 8;
+	// KENNY HAS CHANGED THESE VALUES TO THE ARG VALUES
+	numRows = stoi(argv[2]);
+	numCols = stoi(argv[1]);
+	numTravelers = stoi(argv[3]);
+	if (argc > 4) {
+		GrowTailDistance = stoi(argv[4]);
+	} else {
+		GrowTailDistance = INT_MAX;
+	}
+
 	numLiveThreads = 0;
 	numTravelersDone = 0;
 
@@ -273,10 +283,17 @@ void initializeApplication(void)
 		traveler.segmentList.push_back(seg);
 		grid[pos.row][pos.col] = SquareType::TRAVELER;
 
-		//	I add 0-n segments to my travelers
-		unsigned int numAddSegments = segmentNumberGenerator(engine);
+		//	Changed to make it so argv[4] segments will be added to the travellers,
+		// and for no argv[4] you cannot add any segments to the tail
+		bool canAddSegment;
+		unsigned int numAddSegments = GrowTailDistance;
 		TravelerSegment currSeg = traveler.segmentList[0];
-		bool canAddSegment = true;
+		if (GrowTailDistance > 1) {
+			canAddSegment = true;
+		} else {
+			canAddSegment = false;
+		}
+		
 cout << "Traveler " << k << " at (row=" << pos.row << ", col=" <<
 		pos.col << "), direction: " << dirStr(dir) << ", with up to " << numAddSegments << " additional segments" << endl;
 cout << "\t";
