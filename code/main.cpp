@@ -8,6 +8,7 @@
 #include <iostream>
 #include <string>
 #include <random>
+#include <thread>
 //
 #include <cstdio>
 #include <cstdlib>
@@ -183,6 +184,9 @@ int main(int argc, char* argv[])
 	numRows = stoi(argv[2]);
 	numCols = stoi(argv[1]);
 	numTravelers = stoi(argv[3]);
+
+	// If no 4th argument is given, then the maximum grow 
+	// distance of the traveler is equal to INT_MAX == 1
 	if (argc > 4) {
 		GrowTailDistance = stoi(argv[4]);
 	} else {
@@ -224,6 +228,13 @@ int main(int argc, char* argv[])
 	return 0;
 }
 
+//==================================================================================
+//
+//	FUNCTION PROTOTYPE FOR TRAVELER THREADS
+//
+//==================================================================================
+
+void Traveler_Thread(int index, float* color);
 
 //==================================================================================
 //
@@ -268,59 +279,29 @@ void initializeApplication(void)
 	//	Generate walls and partitions
 	generateWalls();
 	generatePartitions();
+
+
+	float** travelerColor = createTravelerColors(numTravelers);
+
+	// INITILIZE LIST OF THREADS
+	// At this point, we need 1 thread for each traveler. 
+	thread** TravelerThreads = new std::thread*[numTravelers];
+
+	for (unsigned int i = 0; i < numTravelers; i++) {
+		TravelerThreads[i] = new thread(Traveler_Thread, i, travelerColor[i]);
+		numLiveThreads += 1;
+	}
 	
 	//	Initialize traveler info structs
 	//	You will probably need to replace/complete this as you add thread-related data
-	float** travelerColor = createTravelerColors(numTravelers);
-	for (unsigned int k=0; k<numTravelers; k++) {
-		GridPosition pos = getNewFreePosition();
-		//	Note that treating an enum as a sort of integer is increasingly
-		//	frowned upon, as C++ versions progress
-		Direction dir = static_cast<Direction>(segmentDirectionGenerator(engine));
-
-		TravelerSegment seg = {pos.row, pos.col, dir};
-		Traveler traveler;
-		traveler.segmentList.push_back(seg);
-		grid[pos.row][pos.col] = SquareType::TRAVELER;
-
-		//	Changed to make it so argv[4] segments will be added to the travellers,
-		// and for no argv[4] you cannot add any segments to the tail
-		bool canAddSegment;
-		unsigned int numAddSegments = GrowTailDistance;
-		TravelerSegment currSeg = traveler.segmentList[0];
-		if (GrowTailDistance > 1) {
-			canAddSegment = true;
-		} else {
-			canAddSegment = false;
-		}
-		
-cout << "Traveler " << k << " at (row=" << pos.row << ", col=" <<
-		pos.col << "), direction: " << dirStr(dir) << ", with up to " << numAddSegments << " additional segments" << endl;
-cout << "\t";
-
-		for (unsigned int s=0; s<numAddSegments && canAddSegment; s++)
-		{
-			TravelerSegment newSeg = newTravelerSegment(currSeg, canAddSegment);
-			if (canAddSegment)
-			{
-				traveler.segmentList.push_back(newSeg);
-				currSeg = newSeg;
-cout << dirStr(newSeg.dir) << "  ";
-			}
-		}
-cout << endl;
-
-		for (unsigned int c=0; c<4; c++)
-			traveler.rgba[c] = travelerColor[k][c];
-		
-		travelerList.push_back(traveler);
-	}
+	
 	
 	//	free array of colors
 	for (unsigned int k=0; k<numTravelers; k++)
 		delete []travelerColor[k];
 	delete []travelerColor;
 }
+
 
 
 //------------------------------------------------------
@@ -434,6 +415,65 @@ TravelerSegment newTravelerSegment(const TravelerSegment& currentSeg, bool& canA
 	
 	return newSeg;
 }
+
+//==================================================================================
+//
+//	TRAVELER THREAD FUNCTION
+//
+//==================================================================================
+
+void Traveler_Thread(int index, float* TravelerColor) {
+		GridPosition pos = getNewFreePosition();
+		//	Note that treating an enum as a sort of integer is increasingly
+		//	frowned upon, as C++ versions progress
+		Direction dir = static_cast<Direction>(segmentDirectionGenerator(engine));
+
+		TravelerSegment seg = {pos.row, pos.col, dir};
+		Traveler traveler;
+		traveler.segmentList.push_back(seg);
+		grid[pos.row][pos.col] = SquareType::TRAVELER;
+
+		//	Changed to make it so argv[4] segments will be added to the travelers,
+		// and for no argv[4] you cannot add any segments to the tail
+		
+		bool canAddSegment;
+		unsigned int numAddSegments = GrowTailDistance;
+		TravelerSegment currSeg = traveler.segmentList[0];
+
+		if (GrowTailDistance > 1) {
+			canAddSegment = true;
+		} else {
+			canAddSegment = false;
+		}
+		
+		cout << "Traveler " << index << " at (row=" << pos.row << ", col=" <<
+		pos.col << "), direction: " << dirStr(dir) << ", with up to " << numAddSegments << " additional segments" << endl;
+		cout << "\t";
+
+		for (unsigned int s=0; s<numAddSegments && canAddSegment; s++)
+		{
+			TravelerSegment newSeg = newTravelerSegment(currSeg, canAddSegment);
+			if (canAddSegment)
+			{
+				traveler.segmentList.push_back(newSeg);
+				currSeg = newSeg;
+				cout << dirStr(newSeg.dir) << "  ";
+			}
+		}
+		cout << endl;
+
+		for (unsigned int c=0; c<4; c++)
+			traveler.rgba[c] = TravelerColor[c];
+		
+		travelerList.push_back(traveler);
+}
+
+//==================================================================================
+//
+//	END TRAVELER THREAD FUNCTION
+//
+//==================================================================================
+
 
 void generateWalls(void)
 {
