@@ -45,7 +45,7 @@ unsigned int numLiveThreads = 0;		//	the number of live traveler threads
 vector<Traveler> travelerList;
 vector<SlidingPartition> partitionList;
 GridPosition	exitPos;	//	location of the exit
-
+thread** TravelerThreads;
 unsigned int INT_MAX = 1;
 unsigned int GrowTailDistance = 0;
 
@@ -184,7 +184,7 @@ int main(int argc, char* argv[])
 	numRows = stoi(argv[2]);
 	numCols = stoi(argv[1]);
 	numTravelers = stoi(argv[3]);
-
+	TravelerThreads = new std::thread*[numTravelers];
 	// If no 4th argument is given, then the maximum grow 
 	// distance of the traveler is equal to INT_MAX == 1
 	if (argc > 4) {
@@ -286,7 +286,7 @@ void initializeApplication(void)
 
 	// INITILIZE LIST OF THREADS
 	// At this point, we need 1 thread for each traveler. 
-	thread** TravelerThreads = new std::thread*[numTravelers];
+	
 
 	for (unsigned int i = 0; i < numTravelers; i++) {
 		TravelerThreads[i] = new thread(Traveler_Thread, i, travelerColor);
@@ -424,15 +424,6 @@ TravelerSegment newTravelerSegment(const TravelerSegment& currentSeg, bool& canA
 //
 //==================================================================================
 
-void Move_Traveler() {
-	// What I think the process would look like
-	// Need to know where the end space is
-	// Need a path or general direction to travel in
-	// Check if the space in front of the traveler is free AND 
-	// the direction is towards the end
-	// ---> Yes: Move to that space
-	// ---> No: Pick a new direction and repeat
-}
 
 void Traveler_Thread(int index, float** colorList) {
 
