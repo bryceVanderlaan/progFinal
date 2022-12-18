@@ -230,11 +230,12 @@ int main(int argc, char* argv[])
 
 //==================================================================================
 //
-//	FUNCTION PROTOTYPE FOR TRAVELER THREADS
+//	FUNCTION PROTOTYPES FOR TRAVELER THREADS
 //
 //==================================================================================
 
 void Traveler_Thread(int index, float** colorList); 
+void Move_Traveler();
 
 //==================================================================================
 //
@@ -422,6 +423,16 @@ TravelerSegment newTravelerSegment(const TravelerSegment& currentSeg, bool& canA
 //	TRAVELER THREAD FUNCTION
 //
 //==================================================================================
+
+void Move_Traveler() {
+	// What I think the process would look like
+	// Need to know where the end space is
+	// Need a path or general direction to travel in
+	// Check if the space in front of the traveler is free AND 
+	// the direction is towards the end
+	// ---> Yes: Move to that space
+	// ---> No: Pick a new direction and repeat
+}
 
 void Traveler_Thread(int index, float** colorList) {
 

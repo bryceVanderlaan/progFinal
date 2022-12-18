@@ -557,7 +557,7 @@ void myTimerFunc(int value)
 	(void) value;
 
     myDisplay();
-
+	Move_Traveler();
 	glutTimerFunc(15, myTimerFunc, 0);
 }
 
