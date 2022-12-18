@@ -234,7 +234,7 @@ int main(int argc, char* argv[])
 //
 //==================================================================================
 
-void Traveler_Thread(int index, float* color);
+void Traveler_Thread(int index, float** colorList); 
 
 //==================================================================================
 //
@@ -288,13 +288,14 @@ void initializeApplication(void)
 	thread** TravelerThreads = new std::thread*[numTravelers];
 
 	for (unsigned int i = 0; i < numTravelers; i++) {
-		TravelerThreads[i] = new thread(Traveler_Thread, i, travelerColor[i]);
+		TravelerThreads[i] = new thread(Traveler_Thread, i, travelerColor);
 		numLiveThreads += 1;
 	}
 	
-	//	Initialize traveler info structs
-	//	You will probably need to replace/complete this as you add thread-related data
 	
+	for (unsigned int i = 0; i < numTravelers; i++) {
+		TravelerThreads[i]->join();
+	}
 	
 	//	free array of colors
 	for (unsigned int k=0; k<numTravelers; k++)
@@ -422,7 +423,9 @@ TravelerSegment newTravelerSegment(const TravelerSegment& currentSeg, bool& canA
 //
 //==================================================================================
 
-void Traveler_Thread(int index, float* TravelerColor) {
+void Traveler_Thread(int index, float** colorList) {
+
+		//	Initialize traveler info structs
 		GridPosition pos = getNewFreePosition();
 		//	Note that treating an enum as a sort of integer is increasingly
 		//	frowned upon, as C++ versions progress
@@ -463,7 +466,7 @@ void Traveler_Thread(int index, float* TravelerColor) {
 		cout << endl;
 
 		for (unsigned int c=0; c<4; c++)
-			traveler.rgba[c] = TravelerColor[c];
+			traveler.rgba[c] = colorList[index][c];
 		
 		travelerList.push_back(traveler);
 }
