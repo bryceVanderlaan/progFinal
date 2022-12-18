@@ -480,6 +480,13 @@ void Traveler_Thread(int index, float** colorList) {
 			traveler.rgba[c] = colorList[index][c];
 		
 		travelerList.push_back(traveler);
+		// At this point, the traveler is created and we can start its movement towards the end
+
+		// First we need to know where the end is and where to go
+		// Could possibly get a direction, or build a recursive path from the traveler to the exit.
+		// possible to get the euclidean distance or manhattan distance??
+ 		// Last resort seems to be make the traveler move aimlessly until it randomly hits the exit
+
 }
 
 //==================================================================================
