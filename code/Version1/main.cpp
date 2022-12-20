@@ -595,13 +595,18 @@ void Traveler_Thread(int index, float** colorList) {
 
 		stepsTaken++;
 	}
-	
+
+	// Traveler Finished Maze
+	numTravelersDone += 1;
 
 	//deallocate the Cell matrix
 	for (unsigned i = 0; i < numRows; i++) {
 		delete[] cellInfo[i];
 	}
 	delete[] cellInfo;
+
+	// Thread is dead after this
+	numLiveThreads -= 1;
 }
 
 //==================================================================================
