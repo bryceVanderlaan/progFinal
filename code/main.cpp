@@ -74,6 +74,7 @@ GridPosition	exitPos;	//	location of the exit
 
 unsigned int maxInt = 1;
 unsigned int GrowTailDistance = 0;
+thread** TravelerThreads;
 
 //	travelers' sleep time between moves (in microseconds)
 const int MIN_SLEEP_TIME = 1000;
@@ -210,6 +211,7 @@ int main(int argc, char* argv[])
 	numRows = stoi(argv[2]);
 	numCols = stoi(argv[1]);
 	numTravelers = stoi(argv[3]);
+	TravelerThreads = new std::thread*[numTravelers];
 
 	// If no 4th argument is given, then the maximum grow 
 	// distance of the traveler is equal to maxInt == 1
@@ -227,7 +229,7 @@ int main(int argc, char* argv[])
 	//	function because that function passes them to glutInit, the required call
 	//	to the initialization of the glut library.
 	initializeFrontEnd(argc, argv);
-	
+
 	//	Now we can do application-level initialization
 	initializeApplication();
 
@@ -238,6 +240,12 @@ int main(int argc, char* argv[])
 	//	we set up earlier will be called when the corresponding event
 	//	occurs
 	glutMainLoop();
+
+
+	// Wait for threads to finish
+	for (unsigned int i = 0; i < numTravelers; i++) {
+		TravelerThreads[i]->join();
+	}
 	
 	//	Free allocated resource before leaving (not absolutely needed, but
 	//	just nicer.  Also, if you crash there, you know something is wrong
@@ -310,22 +318,18 @@ void initializeApplication(void)
 
 	// INITILIZE LIST OF THREADS
 	// At this point, we need 1 thread for each traveler. 
-	thread** TravelerThreads = new std::thread*[numTravelers];
+	
 
 	for (unsigned int i = 0; i < numTravelers; i++) {
 		TravelerThreads[i] = new thread(Traveler_Thread, i, travelerColor);
 		numLiveThreads += 1;
 	}
 	
+	//free array of colors
 	
-	for (unsigned int i = 0; i < numTravelers; i++) {
-		TravelerThreads[i]->join();
-	}
-	
-	//	free array of colors
-	for (unsigned int k=0; k<numTravelers; k++)
-		delete []travelerColor[k];
-	delete []travelerColor;
+	// for (unsigned int k=0; k<numTravelers; k++)
+	// 	delete []travelerColor[k];
+	// delete []travelerColor;
 }
 
 
@@ -566,11 +570,29 @@ void Traveler_Thread(int index, float** colorList) {
 		cout << "Traveler 1 is at position: (" << pos.row << ", " << pos.col << ")\n";
 		cout << "Now moving to position: (" << pathToExit[stepsTaken].row << ", " << pathToExit[stepsTaken].col << ")\n";
 		cout << "=======================================================================\n";
+
+		Direction nextMoveDirection;
+		// look at current position, and then compare it to the next position to get direction
+		if (pathToExit[stepsTaken].row < pos.row) {
+			// This is a north move
+			nextMoveDirection = Direction::NORTH;
+		} else if (pathToExit[stepsTaken].row > pos.row) {
+			//This is a south move
+			nextMoveDirection = Direction::SOUTH;
+		} else if (pathToExit[stepsTaken].col < pos.col) {
+			//This is a West Move
+			nextMoveDirection = Direction::WEST;
+		} else if (pathToExit[stepsTaken].col > pos.col) {
+			//This is an EAST move
+			nextMoveDirection = Direction::EAST;
+		}
+
+		travelerList[index].segmentList[0].dir = nextMoveDirection;
 		travelerList[index].segmentList[0].row = pathToExit[stepsTaken].row;
 		travelerList[index].segmentList[0].col = pathToExit[stepsTaken].col;
 		pos.row = pathToExit[stepsTaken].row;
 		pos.col = pathToExit[stepsTaken].col;
-		drawTravelers();
+		drawTraveler(travelerList[index]);
 
 		stepsTaken++;
 	}
