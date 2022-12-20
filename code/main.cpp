@@ -9,15 +9,36 @@
 #include <string>
 #include <random>
 #include <thread>
-//
+#include <vector>
+#include "math.h"
+#include <list>
 #include <cstdio>
 #include <cstdlib>
 #include <ctime>
+#include <climits>
+#include <bits/stdc++.h>
+#include <unistd.h>
+#include <mutex>
 //
 #include "gl_frontEnd.h"
 
 //	feel free to "un-use" std if this is against your beliefs.
 using namespace std;
+
+//struct to hold relevant info for pathfinding algo
+struct Cell {
+	bool isObstacle = false;
+	bool visited = false;
+
+	float fGlobalScore;
+	float fLocalScore;
+
+	unsigned row;
+	unsigned col;
+
+	vector<Cell*> neighbors;
+	Cell* parent;
+};
 
 //==================================================================================
 //	Function prototypes
@@ -26,6 +47,11 @@ void initializeApplication(void);
 GridPosition getNewFreePosition(void);
 Direction newDirection(Direction forbiddenDir = Direction::NUM_DIRECTIONS);
 TravelerSegment newTravelerSegment(const TravelerSegment& currentSeg, bool& canAdd);
+void Traveler_Thread(int index, float** colorList);
+void findTheExit(const GridPosition& source,Cell **cellInfo);
+vector<Cell> buildPath(const GridPosition& source,Cell **cellInfo);
+bool inBounds(unsigned row, unsigned col);
+double calculateDist(const Cell *source, const Cell *destination);
 void generateWalls(void);
 void generatePartitions(void);
 
@@ -45,8 +71,8 @@ unsigned int numLiveThreads = 0;		//	the number of live traveler threads
 vector<Traveler> travelerList;
 vector<SlidingPartition> partitionList;
 GridPosition	exitPos;	//	location of the exit
-thread** TravelerThreads;
-unsigned int INT_MAX = 1;
+
+unsigned int maxInt = 1;
 unsigned int GrowTailDistance = 0;
 
 //	travelers' sleep time between moves (in microseconds)
@@ -184,13 +210,13 @@ int main(int argc, char* argv[])
 	numRows = stoi(argv[2]);
 	numCols = stoi(argv[1]);
 	numTravelers = stoi(argv[3]);
-	TravelerThreads = new std::thread*[numTravelers];
+
 	// If no 4th argument is given, then the maximum grow 
-	// distance of the traveler is equal to INT_MAX == 1
+	// distance of the traveler is equal to maxInt == 1
 	if (argc > 4) {
 		GrowTailDistance = stoi(argv[4]);
 	} else {
-		GrowTailDistance = INT_MAX;
+		GrowTailDistance = maxInt;
 	}
 
 	numLiveThreads = 0;
@@ -230,12 +256,10 @@ int main(int argc, char* argv[])
 
 //==================================================================================
 //
-//	FUNCTION PROTOTYPES FOR TRAVELER THREADS
+//	FUNCTION PROTOTYPE FOR TRAVELER THREADS
 //
 //==================================================================================
 
-void Traveler_Thread(int index, float** colorList); 
-void Move_Traveler();
 
 //==================================================================================
 //
@@ -286,7 +310,7 @@ void initializeApplication(void)
 
 	// INITILIZE LIST OF THREADS
 	// At this point, we need 1 thread for each traveler. 
-	
+	thread** TravelerThreads = new std::thread*[numTravelers];
 
 	for (unsigned int i = 0; i < numTravelers; i++) {
 		TravelerThreads[i] = new thread(Traveler_Thread, i, travelerColor);
@@ -424,60 +448,139 @@ TravelerSegment newTravelerSegment(const TravelerSegment& currentSeg, bool& canA
 //
 //==================================================================================
 
-
 void Traveler_Thread(int index, float** colorList) {
 
-		//	Initialize traveler info structs
-		GridPosition pos = getNewFreePosition();
-		//	Note that treating an enum as a sort of integer is increasingly
-		//	frowned upon, as C++ versions progress
-		Direction dir = static_cast<Direction>(segmentDirectionGenerator(engine));
+	//	Initialize traveler info structs
+	GridPosition pos = getNewFreePosition();
+	//	Note that treating an enum as a sort of integer is increasingly
+	//	frowned upon, as C++ versions progress
+	Direction dir = static_cast<Direction>(segmentDirectionGenerator(engine));
 
-		TravelerSegment seg = {pos.row, pos.col, dir};
-		Traveler traveler;
-		traveler.segmentList.push_back(seg);
-		grid[pos.row][pos.col] = SquareType::TRAVELER;
+	TravelerSegment seg = {pos.row, pos.col, dir};
+	Traveler traveler;
+	traveler.segmentList.push_back(seg);
+	grid[pos.row][pos.col] = SquareType::TRAVELER;
 
-		//	Changed to make it so argv[4] segments will be added to the travelers,
-		// and for no argv[4] you cannot add any segments to the tail
-		
-		bool canAddSegment;
-		unsigned int numAddSegments = GrowTailDistance;
-		TravelerSegment currSeg = traveler.segmentList[0];
+	//	Changed to make it so argv[4] segments will be added to the travelers,
+	// and for no argv[4] you cannot add any segments to the tail
+	
+	bool canAddSegment;
+	unsigned int numAddSegments = GrowTailDistance;
+	TravelerSegment currSeg = traveler.segmentList[0];
 
-		if (GrowTailDistance > 1) {
-			canAddSegment = true;
-		} else {
-			canAddSegment = false;
-		}
-		
-		cout << "Traveler " << index << " at (row=" << pos.row << ", col=" <<
-		pos.col << "), direction: " << dirStr(dir) << ", with up to " << numAddSegments << " additional segments" << endl;
-		cout << "\t";
+	if (GrowTailDistance > 1) {
+		canAddSegment = true;
+	} else {
+		canAddSegment = false;
+	}
+	
+	cout << "Traveler " << index << " at (row=" << pos.row << ", col=" <<
+	pos.col << "), direction: " << dirStr(dir) << ", with up to " << numAddSegments << " additional segments" << endl;
 
-		for (unsigned int s=0; s<numAddSegments && canAddSegment; s++)
+	cout << "End position is: (row=" << exitPos.row << ", col=" << exitPos.col << ")\n";
+
+	for (unsigned int s=0; s<numAddSegments && canAddSegment; s++)
+	{
+		TravelerSegment newSeg = newTravelerSegment(currSeg, canAddSegment);
+		if (canAddSegment)
 		{
-			TravelerSegment newSeg = newTravelerSegment(currSeg, canAddSegment);
-			if (canAddSegment)
-			{
-				traveler.segmentList.push_back(newSeg);
-				currSeg = newSeg;
-				cout << dirStr(newSeg.dir) << "  ";
+			traveler.segmentList.push_back(newSeg);
+			currSeg = newSeg;
+			cout << dirStr(newSeg.dir) << "  ";
+		}
+	}
+	cout << endl;
+
+	for (unsigned int c=0; c<4; c++)
+		traveler.rgba[c] = colorList[index][c];
+	
+	travelerList.push_back(traveler);
+
+
+	//create a matrix of cells the same size as the grid to find
+	//the path to the exit
+	Cell **cellInfo = new Cell*[numRows];
+	for(unsigned i = 0; i < numRows; i++) {
+		cellInfo[i] = new Cell[numCols];
+	}
+
+	//init each cell in the matrix
+	for(unsigned i = 0; i < numRows; i++) {
+		for (unsigned j = 0; j < numCols; j++) {
+			//assign row and col
+			cellInfo[i][j].row = i;
+			cellInfo[i][j].col = j;
+			
+			//if the square type at this index on the grid is of
+			//type FREE_SQUARE, it is not an obstacle
+			if (grid[i][j]==SquareType::FREE_SQUARE) {
+				cellInfo[i][j].isObstacle = false;
+			} else {
+				//otherwise it is
+				cellInfo[i][j].isObstacle = true;
+			}
+
+			//these are max unsigned int by default since any
+			//euclidian distances between neighbors or the end pt will be less
+			cellInfo[i][j].fLocalScore = UINT_MAX;
+			cellInfo[i][j].fGlobalScore = UINT_MAX;
+
+			//by default, no cell has a parent and no cell has been visited
+			cellInfo[i][j].parent = nullptr;
+			cellInfo[i][j].visited = false;
+
+			//four possible moves (NSEW)
+			int moveRow[] = {1,-1,0,0};
+			int moveCol[] = {0,0,1,-1};
+
+			for (int k = 0; k < 4; k++) {
+				unsigned neighborRow = i + moveRow[k];
+				unsigned neighborCol = j + moveCol[k];
+
+				//if the current neighbor does not go OOB
+				if (inBounds(neighborRow,neighborCol)) {
+					//add it to the vector of neighbors
+					cellInfo[i][j].neighbors.push_back(&(cellInfo[neighborRow][neighborCol]));
+				} else {
+					//otherwise skip it
+					continue;
+				}
 			}
 		}
-		cout << endl;
+	}
 
-		for (unsigned int c=0; c<4; c++)
-			traveler.rgba[c] = colorList[index][c];
-		
-		travelerList.push_back(traveler);
-		// At this point, the traveler is created and we can start its movement towards the end
+	//pass the starting position and the grid to find the a path to the exit point
+	findTheExit(pos,cellInfo);
 
-		// First we need to know where the end is and where to go
-		// Could possibly get a direction, or build a recursive path from the traveler to the exit.
-		// possible to get the euclidean distance or manhattan distance??
- 		// Last resort seems to be make the traveler move aimlessly until it randomly hits the exit
+	//build the path to the exit and store it in a vector
+	vector<Cell> pathToExit = buildPath(pos,cellInfo);
 
+	//the path will always come back in reverse order, we need to reverse it
+	reverse(pathToExit.begin(),pathToExit.end());
+
+	unsigned stepsTaken = 0;
+
+	while(stepsTaken < pathToExit.size()) {
+		usleep(150000);
+
+		cout << "Traveler 1 is at position: (" << pos.row << ", " << pos.col << ")\n";
+		cout << "Now moving to position: (" << pathToExit[stepsTaken].row << ", " << pathToExit[stepsTaken].col << ")\n";
+		cout << "=======================================================================\n";
+		travelerList[index].segmentList[0].row = pathToExit[stepsTaken].row;
+		travelerList[index].segmentList[0].col = pathToExit[stepsTaken].col;
+		pos.row = pathToExit[stepsTaken].row;
+		pos.col = pathToExit[stepsTaken].col;
+		drawTravelers();
+
+		stepsTaken++;
+	}
+	
+
+	//deallocate the Cell matrix
+	for (unsigned i = 0; i < numRows; i++) {
+		delete[] cellInfo[i];
+	}
+	delete[] cellInfo;
 }
 
 //==================================================================================
@@ -485,6 +588,95 @@ void Traveler_Thread(int index, float** colorList) {
 //	END TRAVELER THREAD FUNCTION
 //
 //==================================================================================
+
+void findTheExit(const GridPosition& source, Cell **cellInfo) {
+	//to start, the current cell is the starting position of the traveler
+	Cell *currCell = &(cellInfo[source.row][source.col]);
+	//end position will remain constant
+	Cell *endCell = &(cellInfo[exitPos.row][exitPos.col]);
+	//set local score to zero since we have not found the distance for any neighbors yet
+	currCell->fLocalScore = 0.0f;
+	//calulate euclidian distance between starting cell and end cell
+	currCell->fGlobalScore = calculateDist(currCell,endCell);
+
+	//init a list of Cell pointers to keep track of the cells
+	list<Cell*> untestedCells;
+	//the starting cell is the first cell in the list
+	untestedCells.push_back(currCell);
+
+
+	//as long as there are elements in the list and we have not yet reached the end
+	while(!untestedCells.empty() && currCell != endCell) {
+		//sort the list in order of lowest global score
+		//(this represents the lowest euclidian distance between an element and the end cell)
+		untestedCells.sort([](const Cell* a, const Cell* b) {return a->fGlobalScore < b->fGlobalScore;});
+
+		//get rid of any cells that have already been evaluated
+		while(!untestedCells.empty() && untestedCells.front()->visited) {
+			untestedCells.pop_front();
+		}
+
+		//stop the loop if there are no more cells to process
+		if (untestedCells.empty()) {
+			break;
+		}
+
+		//due to the sort, we can safely assume that the first element in the list
+		//is the next best move
+		currCell = untestedCells.front();
+		//we mark this cell as visited, so as not to process it twice
+		currCell->visited = true;
+
+		//assess each neighbor of the current cell
+		for (auto neighbor:currCell->neighbors) {
+			//if it hasn't been assessed yet and it's not an obstacle
+			if (!neighbor->visited && !neighbor->isObstacle) {
+				//put it in the list to test at some point
+				untestedCells.push_back(neighbor);
+			}
+			
+			float potentiallyBetterLocalScore = currCell->fLocalScore + calculateDist(currCell,neighbor);
+
+			//if the euclidian distance between the current cell and the current neighbor is less
+			//than the current neigbor's local score
+			if (potentiallyBetterLocalScore < neighbor->fLocalScore) {
+				//the current cell is now the parent of this neighbor
+				neighbor->parent = currCell;
+				neighbor->fLocalScore = potentiallyBetterLocalScore;
+				neighbor->fGlobalScore = neighbor->fLocalScore + calculateDist(neighbor,endCell);
+			}
+		}
+	}
+
+}
+
+vector<Cell> buildPath(const GridPosition& source,Cell **cellInfo) {
+	//init and empty vector
+	vector<Cell> pathToExit{};
+	//get pointers to the starting cell and ending cell
+	Cell *currCell = &(cellInfo[exitPos.row][exitPos.col]);
+	Cell *startCell = &(cellInfo[source.row][source.col]);
+	//as long as the current cell is not the start of the path
+	while(currCell != startCell) {
+		//add that cell to the path
+		pathToExit.push_back(*currCell);
+		//move to the parent of the current cell
+		currCell = currCell->parent;
+	}
+
+	//return the full path in backwards order
+	return pathToExit;
+}
+
+bool inBounds(unsigned row, unsigned col){ 
+    //returns true if the index provided as argument is within the grid
+	return (row >= 0 && row < numRows && col >= 0 && col < numCols);
+}
+
+double calculateDist(const Cell *source, const Cell *destination){
+	//pythagorean theorem for distance (aka Euclidian aka as the crow flies)
+	return sqrtf((source->row - destination->row)*(source->row - destination->row) + (source->col - destination->col) * (source->col - destination->col));
+}
 
 
 void generateWalls(void)
@@ -669,4 +861,3 @@ void generatePartitions(void)
 		}
 	}
 }
-

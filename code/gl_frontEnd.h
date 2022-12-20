@@ -75,4 +75,3 @@ float** createTravelerColors(unsigned int numTravelers);
 
 
 #endif // GL_FRONT_END_H
-

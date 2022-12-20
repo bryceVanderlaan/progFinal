@@ -441,7 +441,7 @@ void displayGridPane(void)
 	glTranslatef(0, GRID_PANE_HEIGHT, 0);
 	glScalef(1.f, -1.f, 1.f);
 	
-	drawTravelers();
+	//drawTravelers();
 	
 	drawGrid();
 
@@ -557,6 +557,7 @@ void myTimerFunc(int value)
 	(void) value;
 
     myDisplay();
+
 	glutTimerFunc(15, myTimerFunc, 0);
 }
 

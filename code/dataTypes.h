@@ -54,6 +54,10 @@ struct GridPosition
 	 */
 	unsigned int col;
 
+	bool operator<(const GridPosition& t) const {
+        return (this->row < t.row);
+    }
+
 };
 
 /**
