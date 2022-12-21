@@ -73,6 +73,7 @@ struct TravelerSegment
 	unsigned int col;
 	/**	One of four possible orientations
 	 */
+	Direction prevDir;
 	Direction dir;
 
 };
