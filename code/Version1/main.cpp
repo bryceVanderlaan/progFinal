@@ -453,7 +453,7 @@ TravelerSegment newTravelerSegment(const TravelerSegment& currentSeg, bool& canA
 //==================================================================================
 
 void Traveler_Thread(int index, float** colorList) {
-
+	
 	//	Initialize traveler info structs
 	GridPosition pos = getNewFreePosition();
 	//	Note that treating an enum as a sort of integer is increasingly
@@ -478,7 +478,7 @@ void Traveler_Thread(int index, float** colorList) {
 	} else if (stepsUntilAddSegment == 1) {
 		cout << "Grow Tail Distance: " << stepsUntilAddSegment << endl;
 		canAddSegment = false;
-	}
+	}	
 	
 	cout << "Traveler " << index << " at (row=" << pos.row << ", col=" <<
 	pos.col << "), direction: " << dirStr(dir) << ", with up to " << numAddSegments << " additional segments" << endl;
@@ -489,18 +489,23 @@ void Traveler_Thread(int index, float** colorList) {
 		traveler.rgba[c] = colorList[index][c];
 	
 	travelerList.push_back(traveler);
+	
+	
 
 	for (unsigned int s=0; s<numAddSegments && canAddSegment; s++)
 	{
 		TravelerSegment newSeg = newTravelerSegment(currSeg, canAddSegment);
 		if (canAddSegment)
 		{
+			//cout << &(travelerList) << " " << &(travelerList[index]) << " " << &(travelerList[index].segmentList) << " " << &(newSeg) << endl;
 			travelerList[index].segmentList.push_back(newSeg);
 			currSeg = newSeg;
-			cout << dirStr(newSeg.dir) << "  ";
+			//cout << dirStr(newSeg.dir) << "  ";
 		}
 	}
 	cout << endl;
+	
+	
 
 	//create a matrix of cells the same size as the grid to find
 	//the path to the exit
@@ -567,19 +572,19 @@ void Traveler_Thread(int index, float** colorList) {
 
 	while(stepsTaken < pathToExit.size()) {
 		usleep(150000);
-
+		
 		if (stepsTaken%stepsUntilAddSegment == 0 && !(travelerList[index].segmentList[0].row == exitPos.row && travelerList[index].segmentList[0].col == exitPos.col)) {
 			TravelerSegment newSeg = newTravelerSegment(currSeg, canAddSegment);
 			travelerList[index].segmentList.push_back(newSeg);
 			currSeg = newSeg;
-			cout << dirStr(newSeg.dir) << "  ";
+			//cout << dirStr(newSeg.dir) << "  ";
 		}
 
-		cout << "Traveler 1 is at position: (" << pos.row << ", " << pos.col << ")\n";
-		cout << "Now moving to position: (" << pathToExit[stepsTaken].row << ", " << pathToExit[stepsTaken].col << ")\n";
-		cout << "Traveler Size is: " << travelerList[index].segmentList.size() << endl;
-		cout << "=======================================================================\n";
-
+		// cout << "Traveler 1 is at position: (" << pos.row << ", " << pos.col << ")\n";
+		// cout << "Now moving to position: (" << pathToExit[stepsTaken].row << ", " << pathToExit[stepsTaken].col << ")\n";
+		// cout << "Traveler Size is: " << travelerList[index].segmentList.size() << endl;
+		// cout << "=======================================================================\n";
+		
 		Direction nextMoveDirection;
 		// look at current position, and then compare it to the next position to get direction
 		if (pathToExit[stepsTaken].row < pos.row) {
@@ -597,17 +602,16 @@ void Traveler_Thread(int index, float** colorList) {
 		}
 		// We Calculate the new direction for the head of the traveler
 		
-
+		//cout << "HEERE" << endl;
 		// Next, if The traveler is going to have more than 1 segment, 
 		// Then each segment after gets the segment ahead of its direction
 		// so segment 1 would get the direction of segment 0
 		for (size_t i = travelerList[index].segmentList.size() - 1; i > 0; i--) {
 			travelerList[index].segmentList[i].dir = travelerList[index].segmentList[i - 1].dir;
 		}
-
+			// cout << "Success" << endl;
+			// return;
 		travelerList[index].segmentList[0].dir = nextMoveDirection;
-
-		
 		travelerList[index].segmentList[0].row = pathToExit[stepsTaken].row;
 		travelerList[index].segmentList[0].col = pathToExit[stepsTaken].col;
 		pos.row = pathToExit[stepsTaken].row;
@@ -618,7 +622,26 @@ void Traveler_Thread(int index, float** colorList) {
 		stepsTaken++;
 	}
 
-	travelerList[index].segmentList.clear();
+	
+	// Loop for tail to dissapear
+	// while (!travelerList[index].segmentList.empty()) {
+	// 	usleep(150000);
+
+	// 	cout << &(travelerList[index].segmentList[0]) <<endl;
+
+	// 	TravelerSegment newSeg;
+	// 	newSeg.row = travelerList[index].segmentList[0].row;
+	// 	newSeg.col = travelerList[index].segmentList[0].col;
+	// 	newSeg.dir = travelerList[index].segmentList[0].dir;
+
+	// 	travelerList[index].segmentList.erase(travelerList[index].segmentList.begin());
+
+	// 	travelerList[index].segmentList[0].row = newSeg.row;
+	// 	travelerList[index].segmentList[0].col = newSeg.col;
+	// 	travelerList[index].segmentList[0].dir = newSeg.dir; 
+	// 	drawTravelers();
+	// }
+
 
 	// Traveler Finished Maze
 	numTravelersDone += 1;
@@ -709,6 +732,7 @@ vector<Cell> buildPath(const GridPosition& source,Cell **cellInfo) {
 	//as long as the current cell is not the start of the path
 	while(currCell != startCell) {
 		//add that cell to the path
+		//cout << "THIS IS THE PRINT STATEMENT" << currCell << endl;
 		pathToExit.push_back(*currCell);
 		//move to the parent of the current cell
 		currCell = currCell->parent;
