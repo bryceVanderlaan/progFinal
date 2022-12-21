@@ -96,6 +96,9 @@ struct Traveler
 	/**	The list of segments that form the 'tail' of the traveler
 	 */
 	std::vector<TravelerSegment> segmentList;
+
+	//the starting position of the traveler
+	GridPosition startingPos;
 	
 };
 

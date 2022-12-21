@@ -33,8 +33,8 @@ struct Cell {
 	float fGlobalScore;
 	float fLocalScore;
 
-	unsigned row;
-	unsigned col;
+	unsigned int row;
+	unsigned int col;
 
 	vector<Cell*> neighbors;
 	Cell* parent;
@@ -47,11 +47,17 @@ void initializeApplication(void);
 GridPosition getNewFreePosition(void);
 Direction newDirection(Direction forbiddenDir = Direction::NUM_DIRECTIONS);
 TravelerSegment newTravelerSegment(const TravelerSegment& currentSeg, bool& canAdd);
-void Traveler_Thread(int index, float** colorList);
+void initTravelers(unsigned int numTravelers, float** colorList);
+void travelerThreadMain(unsigned int index);
+void initCellInfo(Cell **cellInfo);
 void findTheExit(const GridPosition& source,Cell **cellInfo);
 vector<Cell> buildPath(const GridPosition& source,Cell **cellInfo);
-bool inBounds(unsigned row, unsigned col);
+void destroyCellInfo(Cell **cellInfo);
+bool inBounds(unsigned int row, unsigned int col);
 double calculateDist(const Cell *source, const Cell *destination);
+bool atEndOfPath (unsigned int index);
+void travelerUpdate(vector<Cell> &pathToExit, GridPosition &pos, unsigned int index);
+void travelerExit(unsigned int index);
 void generateWalls(void);
 void generatePartitions(void);
 
@@ -171,7 +177,6 @@ void handleKeyboardEvent(unsigned char c, int x, int y)
 	}
 }
 
-
 //------------------------------------------------------------------------
 //	You shouldn't have to touch this one.  Definitely if you don't
 //	add the "producer" threads, and probably not even if you do.
@@ -193,9 +198,6 @@ void slowdownTravelers(void)
 	//	We can slow everything down to admistrative pace if we want.
 	travelerSleepTime = (12 * travelerSleepTime) / 10;
 }
-
-
-
 
 //------------------------------------------------------------------------
 //	You shouldn't have to change anything in the main function besides
@@ -264,17 +266,9 @@ int main(int argc, char* argv[])
 
 //==================================================================================
 //
-//	FUNCTION PROTOTYPE FOR TRAVELER THREADS
-//
-//==================================================================================
-
-
-//==================================================================================
-//
 //	This is a function that you have to edit and add to.
 //
 //==================================================================================
-
 
 void initializeApplication(void)
 {
@@ -313,26 +307,23 @@ void initializeApplication(void)
 	generateWalls();
 	generatePartitions();
 
-
 	float** travelerColor = createTravelerColors(numTravelers);
+
+	initTravelers(numTravelers,travelerColor);
 
 	// INITILIZE LIST OF THREADS
 	// At this point, we need 1 thread for each traveler. 
-	
-
 	for (unsigned int i = 0; i < numTravelers; i++) {
-		TravelerThreads[i] = new thread(Traveler_Thread, i, travelerColor);
+		TravelerThreads[i] = new thread(travelerThreadMain, i);
 		numLiveThreads += 1;
 	}
 	
 	//free array of colors
-	
-	// for (unsigned int k=0; k<numTravelers; k++)
-	// 	delete []travelerColor[k];
-	// delete []travelerColor;
+	for (unsigned int k=0; k<numTravelers; k++) {
+		delete []travelerColor[k];
+	}
+	delete []travelerColor;
 }
-
-
 
 //------------------------------------------------------
 #if 0
@@ -446,77 +437,102 @@ TravelerSegment newTravelerSegment(const TravelerSegment& currentSeg, bool& canA
 	return newSeg;
 }
 
-//==================================================================================
-//
-//	TRAVELER THREAD FUNCTION
-//
-//==================================================================================
-
-void Traveler_Thread(int index, float** colorList) {
+void initTravelers(unsigned int numTravelers, float** colorList) {
 	
-	//	Initialize traveler info structs
-	GridPosition pos = getNewFreePosition();
-	//	Note that treating an enum as a sort of integer is increasingly
-	//	frowned upon, as C++ versions progress
-	Direction dir = static_cast<Direction>(segmentDirectionGenerator(engine));
-
-	TravelerSegment seg = {pos.row, pos.col, dir};
-	Traveler traveler;
-	traveler.segmentList.push_back(seg);
-	grid[pos.row][pos.col] = SquareType::TRAVELER;
-
-	//	Changed to make it so argv[4] segments will be added to the travelers,
-	// and for no argv[4] you cannot add any segments to the tail
+	for (unsigned int i = 0; i < numTravelers; i++) {
+		//	Initialize traveler info structs
+		GridPosition pos = getNewFreePosition();
+		//	Note that treating an enum as a sort of integer is increasingly
+		//	frowned upon, as C++ versions progress
+		Direction dir = static_cast<Direction>(segmentDirectionGenerator(engine));
 	
-	bool canAddSegment;
-	unsigned int numAddSegments = segmentNumberGenerator(engine);
-	TravelerSegment currSeg = traveler.segmentList[0];
-
-	if (stepsUntilAddSegment > 1) {
-		cout << "Grow Tail Distance: " << stepsUntilAddSegment << endl;
-		canAddSegment = true;
-	} else if (stepsUntilAddSegment == 1) {
-		cout << "Grow Tail Distance: " << stepsUntilAddSegment << endl;
-		canAddSegment = false;
-	}	
+		TravelerSegment seg = {pos.row, pos.col, dir};
+		Traveler traveler;
+		traveler.startingPos = pos;
+		traveler.segmentList.push_back(seg);
+		grid[pos.row][pos.col] = SquareType::TRAVELER;
 	
-	cout << "Traveler " << index << " at (row=" << pos.row << ", col=" <<
-	pos.col << "), direction: " << dirStr(dir) << ", with up to " << numAddSegments << " additional segments" << endl;
-
-	cout << "End position is: (row=" << exitPos.row << ", col=" << exitPos.col << ")\n";
-
-	for (unsigned int c=0; c<4; c++)
-		traveler.rgba[c] = colorList[index][c];
+		//	Changed to make it so argv[4] segments will be added to the travelers,
+		// and for no argv[4] you cannot add any segments to the tail
+		
+		bool canAddSegment;
+		unsigned int numAddSegments = segmentNumberGenerator(engine);
+		TravelerSegment currSeg = traveler.segmentList[0];
 	
-	travelerList.push_back(traveler);
+		if (stepsUntilAddSegment > 1) {
+			//cout << "Grow Tail Distance: " << stepsUntilAddSegment << endl;
+			canAddSegment = true;
+		} else {
+			//cout << "Grow Tail Distance: " << stepsUntilAddSegment << endl;
+			canAddSegment = false;
+		}	
+		
+		//cout << "Traveler " << index << " at (row=" << pos.row << ", col=" <<
+		//	pos.col << "), direction: " << dirStr(dir) << ", with up to " << numAddSegments << " additional segments" << endl;
+		//cout << "End position is: (row=" << exitPos.row << ", col=" << exitPos.col << ")\n";
 	
-	
+		for (unsigned int c=0; c<4; c++) {
+			traveler.rgba[c] = colorList[i][c];
+		}			
+		
+		//add the traveler to the traveler list
+		travelerList.push_back(traveler);
 
-	for (unsigned int s=0; s<numAddSegments && canAddSegment; s++)
-	{
-		TravelerSegment newSeg = newTravelerSegment(currSeg, canAddSegment);
-		if (canAddSegment)
+		for (unsigned int s=0; s<numAddSegments && canAddSegment; s++)
 		{
-			//cout << &(travelerList) << " " << &(travelerList[index]) << " " << &(travelerList[index].segmentList) << " " << &(newSeg) << endl;
-			travelerList[index].segmentList.push_back(newSeg);
-			currSeg = newSeg;
-			//cout << dirStr(newSeg.dir) << "  ";
+			TravelerSegment newSeg = newTravelerSegment(currSeg, canAddSegment);
+			if (canAddSegment)
+			{
+				travelerList[i].segmentList.push_back(newSeg);
+				currSeg = newSeg;
+			}
 		}
 	}
-	cout << endl;
-	
-	
+}
 
+void travelerThreadMain(unsigned int index) {
+	
 	//create a matrix of cells the same size as the grid to find
 	//the path to the exit
 	Cell **cellInfo = new Cell*[numRows];
-	for(unsigned i = 0; i < numRows; i++) {
+	for(unsigned int i = 0; i < numRows; i++) {
 		cellInfo[i] = new Cell[numCols];
 	}
 
+	//initialize all the cell structs in the matrix
+	initCellInfo(cellInfo);
+
+	GridPosition pos = travelerList[index].startingPos;
+
+	//pass the starting position and the grid to find the a path to the exit point
+	findTheExit(pos,cellInfo);
+
+	//build the path to the exit and store it in a vector
+	vector<Cell> pathToExit = buildPath(pos,cellInfo);
+
+	//deallocate the Cell matrix
+	destroyCellInfo(cellInfo);
+
+	//the path will always come back in reverse order, we need to reverse it
+	reverse(pathToExit.begin(),pathToExit.end());
+
+	//update the traveler until it reaches the exit point
+	travelerUpdate(pathToExit,pos,index);
+
+	//update the traveler until every segment has reached the exit point
+	travelerExit(index);
+
+	// Traveler Finished Maze
+	numTravelersDone += 1;
+
+	// Thread is dead after this
+	numLiveThreads -= 1;
+}
+
+void initCellInfo(Cell **cellInfo) {
 	//init each cell in the matrix
-	for(unsigned i = 0; i < numRows; i++) {
-		for (unsigned j = 0; j < numCols; j++) {
+	for(unsigned int i = 0; i < numRows; i++) {
+		for (unsigned int j = 0; j < numCols; j++) {
 			//assign row and col
 			cellInfo[i][j].row = i;
 			cellInfo[i][j].col = j;
@@ -544,8 +560,8 @@ void Traveler_Thread(int index, float** colorList) {
 			int moveCol[] = {0,0,1,-1};
 
 			for (int k = 0; k < 4; k++) {
-				unsigned neighborRow = i + moveRow[k];
-				unsigned neighborCol = j + moveCol[k];
+				unsigned int neighborRow = i + moveRow[k];
+				unsigned int neighborCol = j + moveCol[k];
 
 				//if the current neighbor does not go OOB
 				if (inBounds(neighborRow,neighborCol)) {
@@ -558,109 +574,7 @@ void Traveler_Thread(int index, float** colorList) {
 			}
 		}
 	}
-
-	//pass the starting position and the grid to find the a path to the exit point
-	findTheExit(pos,cellInfo);
-
-	//build the path to the exit and store it in a vector
-	vector<Cell> pathToExit = buildPath(pos,cellInfo);
-
-	//the path will always come back in reverse order, we need to reverse it
-	reverse(pathToExit.begin(),pathToExit.end());
-
-	unsigned stepsTaken = 0;
-
-	while(stepsTaken < pathToExit.size()) {
-		usleep(150000);
-		
-		if (stepsTaken%stepsUntilAddSegment == 0 && !(travelerList[index].segmentList[0].row == exitPos.row && travelerList[index].segmentList[0].col == exitPos.col)) {
-			TravelerSegment newSeg = newTravelerSegment(currSeg, canAddSegment);
-			travelerList[index].segmentList.push_back(newSeg);
-			currSeg = newSeg;
-			//cout << dirStr(newSeg.dir) << "  ";
-		}
-
-		// cout << "Traveler 1 is at position: (" << pos.row << ", " << pos.col << ")\n";
-		// cout << "Now moving to position: (" << pathToExit[stepsTaken].row << ", " << pathToExit[stepsTaken].col << ")\n";
-		// cout << "Traveler Size is: " << travelerList[index].segmentList.size() << endl;
-		// cout << "=======================================================================\n";
-		
-		Direction nextMoveDirection;
-		// look at current position, and then compare it to the next position to get direction
-		if (pathToExit[stepsTaken].row < pos.row) {
-			// This is a north move
-			nextMoveDirection = Direction::NORTH;
-		} else if (pathToExit[stepsTaken].row > pos.row) {
-			//This is a south move
-			nextMoveDirection = Direction::SOUTH;
-		} else if (pathToExit[stepsTaken].col < pos.col) {
-			//This is a West Move
-			nextMoveDirection = Direction::WEST;
-		} else if (pathToExit[stepsTaken].col > pos.col) {
-			//This is an EAST move
-			nextMoveDirection = Direction::EAST;
-		}
-		// We Calculate the new direction for the head of the traveler
-		
-		//cout << "HEERE" << endl;
-		// Next, if The traveler is going to have more than 1 segment, 
-		// Then each segment after gets the segment ahead of its direction
-		// so segment 1 would get the direction of segment 0
-		for (size_t i = travelerList[index].segmentList.size() - 1; i > 0; i--) {
-			travelerList[index].segmentList[i].dir = travelerList[index].segmentList[i - 1].dir;
-		}
-			// cout << "Success" << endl;
-			// return;
-		travelerList[index].segmentList[0].dir = nextMoveDirection;
-		travelerList[index].segmentList[0].row = pathToExit[stepsTaken].row;
-		travelerList[index].segmentList[0].col = pathToExit[stepsTaken].col;
-		pos.row = pathToExit[stepsTaken].row;
-		pos.col = pathToExit[stepsTaken].col;
-		
-
-		drawTravelers();
-		stepsTaken++;
-	}
-
-	
-	// Loop for tail to dissapear
-	// while (!travelerList[index].segmentList.empty()) {
-	// 	usleep(150000);
-
-	// 	cout << &(travelerList[index].segmentList[0]) <<endl;
-
-	// 	TravelerSegment newSeg;
-	// 	newSeg.row = travelerList[index].segmentList[0].row;
-	// 	newSeg.col = travelerList[index].segmentList[0].col;
-	// 	newSeg.dir = travelerList[index].segmentList[0].dir;
-
-	// 	travelerList[index].segmentList.erase(travelerList[index].segmentList.begin());
-
-	// 	travelerList[index].segmentList[0].row = newSeg.row;
-	// 	travelerList[index].segmentList[0].col = newSeg.col;
-	// 	travelerList[index].segmentList[0].dir = newSeg.dir; 
-	// 	drawTravelers();
-	// }
-
-
-	// Traveler Finished Maze
-	numTravelersDone += 1;
-
-	//deallocate the Cell matrix
-	for (unsigned i = 0; i < numRows; i++) {
-		delete[] cellInfo[i];
-	}
-	delete[] cellInfo;
-
-	// Thread is dead after this
-	numLiveThreads -= 1;
 }
-
-//==================================================================================
-//
-//	END TRAVELER THREAD FUNCTION
-//
-//==================================================================================
 
 void findTheExit(const GridPosition& source, Cell **cellInfo) {
 	//to start, the current cell is the starting position of the traveler
@@ -732,7 +646,6 @@ vector<Cell> buildPath(const GridPosition& source,Cell **cellInfo) {
 	//as long as the current cell is not the start of the path
 	while(currCell != startCell) {
 		//add that cell to the path
-		//cout << "THIS IS THE PRINT STATEMENT" << currCell << endl;
 		pathToExit.push_back(*currCell);
 		//move to the parent of the current cell
 		currCell = currCell->parent;
@@ -742,7 +655,14 @@ vector<Cell> buildPath(const GridPosition& source,Cell **cellInfo) {
 	return pathToExit;
 }
 
-bool inBounds(unsigned row, unsigned col){ 
+void destroyCellInfo(Cell **cellInfo) {
+	for (unsigned int i = 0; i < numRows; i++) {
+		delete[] cellInfo[i];
+	}
+	delete[] cellInfo;
+}
+
+bool inBounds(unsigned int row, unsigned int col){ 
     //returns true if the index provided as argument is within the grid
 	return (row >= 0 && row < numRows && col >= 0 && col < numCols);
 }
@@ -752,6 +672,100 @@ double calculateDist(const Cell *source, const Cell *destination){
 	return sqrtf((source->row - destination->row)*(source->row - destination->row) + (source->col - destination->col) * (source->col - destination->col));
 }
 
+bool atEndOfPath (unsigned int index) {
+	return (travelerList[index].segmentList[0].row == exitPos.row && travelerList[index].segmentList[0].col == exitPos.col);
+}
+
+void travelerUpdate(vector<Cell> &pathToExit, GridPosition &pos, unsigned int index) {
+	unsigned int stepsTaken = 0;
+
+	TravelerSegment currSeg = travelerList[index].segmentList[0];
+	bool canAddSegment;
+
+	if (stepsUntilAddSegment > 1) {
+		//cout << "Every " << stepsUntilAddSegment << " steps, add a segment.\n";
+		canAddSegment = true;
+	} else {
+		//cout << "Every " << stepsUntilAddSegment << " steps, add a segment.\n";
+		canAddSegment = false;
+	}
+
+	while(stepsTaken < pathToExit.size()) {
+		usleep(150000);
+		
+		if (stepsTaken % stepsUntilAddSegment == 0 && !atEndOfPath(index)) {
+			TravelerSegment newSeg = newTravelerSegment(currSeg, canAddSegment);
+			travelerList[index].segmentList.push_back(newSeg);
+			currSeg = newSeg;
+		}
+
+
+		// cout << "Traveler 1 is at position: (" << pos.row << ", " << pos.col << ")\n";
+		// cout << "Now moving to position: (" << pathToExit[stepsTaken].row << ", " << pathToExit[stepsTaken].col << ")\n";
+		// cout << "Traveler Size is: " << travelerList[index].segmentList.size() << endl;
+		// cout << "=======================================================================\n";
+		
+		Direction nextMoveDirection;
+		// look at current position, and then compare it to the next position to get direction
+		if (pathToExit[stepsTaken].row < pos.row) {
+			// This is a north move
+			nextMoveDirection = Direction::NORTH;
+		} else if (pathToExit[stepsTaken].row > pos.row) {
+			//This is a south move
+			nextMoveDirection = Direction::SOUTH;
+		} else if (pathToExit[stepsTaken].col < pos.col) {
+			//This is a West Move
+			nextMoveDirection = Direction::WEST;
+		} else if (pathToExit[stepsTaken].col > pos.col) {
+			//This is an EAST move
+			nextMoveDirection = Direction::EAST;
+		}
+		// We calculate the new direction for the head of the traveler
+		
+		// Next, if The traveler is going to have more than 1 segment, 
+		// Then each segment after gets the segment ahead of its direction
+		// so segment 1 would get the direction of segment 0
+		for (unsigned int i = travelerList[index].segmentList.size() - 1; i > 0; i--) {
+			travelerList[index].segmentList[i].dir = travelerList[index].segmentList[i - 1].dir;
+		}
+			
+		travelerList[index].segmentList[0].dir = nextMoveDirection;
+		travelerList[index].segmentList[0].row = pathToExit[stepsTaken].row;
+		travelerList[index].segmentList[0].col = pathToExit[stepsTaken].col;
+		pos.row = pathToExit[stepsTaken].row;
+		pos.col = pathToExit[stepsTaken].col;
+		
+
+		drawTravelers();
+		stepsTaken++;
+	}
+}
+
+void travelerExit(unsigned int index) {
+	// Loop for tail to disappear
+	//while there is at least one segment in the list
+	while (!travelerList[index].segmentList.empty()) {
+		usleep(150000);			
+		
+		//create a temporary segment to store the coords of the current head
+		TravelerSegment tempSeg;
+	 	
+		//the temp seg takes the coords of the current head
+		tempSeg.row = travelerList[index].segmentList[0].row;
+	 	tempSeg.col = travelerList[index].segmentList[0].col;
+	 	tempSeg.dir = travelerList[index].segmentList[0].dir;
+	 	
+		//remove the head
+		travelerList[index].segmentList.erase(travelerList[index].segmentList.begin());
+	 	
+		//new head now has the coords of the old head
+		travelerList[index].segmentList[0].row = tempSeg.row;
+	 	travelerList[index].segmentList[0].col = tempSeg.col;
+	 	travelerList[index].segmentList[0].dir = tempSeg.dir;
+
+		drawTravelers();
+	}
+}
 
 void generateWalls(void)
 {
