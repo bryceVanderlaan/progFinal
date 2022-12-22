@@ -1,5 +1,0 @@
-Partners: Bryce Vanderlaan & Kenneth Sullivan
-
-Verison 1:
-
-For Version 1 we needed to create only 1 thread but for the purposes of future versions we decided to start with a Global ThreadList variable that would store the threads used. Then, inside the initializeApplication() function we initialize the thread to use the Traveler_Thread() function, which creates the traveler and then creates a path from the starting point of the traveler to the EXIT and then makes the traveler move. We made the threads join the main thread_________....
