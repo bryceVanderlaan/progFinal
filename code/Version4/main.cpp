@@ -60,9 +60,8 @@ double calculateDist(const Cell *source, const Cell *destination);
 bool atEndOfPath(unsigned int index);
 void travelerUpdate(vector<Cell> &pathToExit, GridPosition &pos, unsigned int index);
 void travelerExit(unsigned int index);
-void handlePartition(Cell &nextMove);
-void shiftVerticalPartition(unsigned int currRow, unsigned int currCol);
-void shiftHorizontalPartition(unsigned int currRow, unsigned int currCol);
+void shiftPartition(unsigned int currRow, unsigned int currCol, unsigned int timesCalled);
+int findPartitionInList(unsigned int currRow, unsigned int currCol);
 void generateWalls(void);
 void generatePartitions(void);
 
@@ -92,7 +91,7 @@ thread **TravelerThreads;
 //	travelers' sleep time between moves (in microseconds)
 const int MIN_SLEEP_TIME = 1000;
 int travelerSleepTime = 150000;
-bool displayGridTraveler = false;
+bool displayGridTraveler = true;
 
 //	An array of C-string where you can store things you want displayed
 //	in the state pane to display (for debugging purposes?)
@@ -578,7 +577,7 @@ void initCellInfo(Cell **cellInfo)
 
 			// if the square type at this index on the grid is of
 			// type FREE_SQUARE, it is not an obstacle
-			if (grid[i][j] == SquareType::FREE_SQUARE)
+			if (grid[i][j] == SquareType::FREE_SQUARE || grid[i][j] == SquareType::VERTICAL_PARTITION || grid[i][j] == SquareType::HORIZONTAL_PARTITION)
 			{
 				cellInfo[i][j].isObstacle = false;
 			}
@@ -700,10 +699,15 @@ vector<Cell> buildPath(const GridPosition &source, Cell **cellInfo)
 	// as long as the current cell is not the start of the path
 	while (currCell != startCell)
 	{
-		// add that cell to the path
-		pathToExit.push_back(*currCell);
-		// move to the parent of the current cell
-		currCell = currCell->parent;
+		// sometimes the parent of the current cell can be nullptr
+		// add check to ensure we are not attempting to acess data member nullptr
+		if (currCell != nullptr)
+		{
+			// add that cell to the path
+			pathToExit.push_back(*currCell);
+			// move to the parent of the current cell
+			currCell = currCell->parent;
+		}
 	}
 
 	// return the full path in backwards order
@@ -758,6 +762,8 @@ void travelerUpdate(vector<Cell> &pathToExit, GridPosition &pos, unsigned int in
 		canAddSegment = false;
 	}
 
+	unsigned int timesSPCalled = 0;
+
 	while (stepsTaken < pathToExit.size())
 	{
 		usleep(travelerSleepTime);
@@ -765,8 +771,29 @@ void travelerUpdate(vector<Cell> &pathToExit, GridPosition &pos, unsigned int in
 		// acquire the lock for this specific traveler to access its data
 		travelerLocks[index].lock();
 
+		// if the next step in the path is currently occupied by another traveler
+		if (grid[pathToExit[stepsTaken].row][pathToExit[stepsTaken].col] == SquareType::TRAVELER)
+		{
+			// wait until the next step is clear
+			travelerLocks[index].unlock();
+			continue;
+		}
+
+		if (grid[pathToExit[stepsTaken].row][pathToExit[stepsTaken].col] == SquareType::VERTICAL_PARTITION || grid[pathToExit[stepsTaken].row][pathToExit[stepsTaken].col] == SquareType::HORIZONTAL_PARTITION)
+		{
+			shiftPartition(pathToExit[stepsTaken].row, pathToExit[stepsTaken].col, timesSPCalled);
+			timesSPCalled++;
+			travelerLocks[index].unlock();
+			continue;
+		}
+
+		timesSPCalled = 0;
+
+		// if the number of steps until we add a new segment has elapsed and
+		//  we are not at the end of the path
 		if (stepsTaken % stepsUntilAddSegment == 0 && !atEndOfPath(index))
 		{
+			// add a new segment to the traveler
 			TravelerSegment newSeg = newTravelerSegment(currSeg, canAddSegment);
 			travelerList[index].segmentList.push_back(newSeg);
 			currSeg = newSeg;
@@ -802,9 +829,8 @@ void travelerUpdate(vector<Cell> &pathToExit, GridPosition &pos, unsigned int in
 		// We calculate the new direction for the head of the traveler
 
 		// to store index of where the tail was before positional update
-		unsigned int prevTailRow, prevTailCol;
-
-		globalTravelerLock.lock();
+		unsigned int prevTailRow = travelerList[index].segmentList[travelerList[index].segmentList.size() - 1].row;
+		unsigned int prevTailCol = travelerList[index].segmentList[travelerList[index].segmentList.size() - 1].col;
 
 		// Next, if The traveler is going to have more than 1 segment,
 		// Then each segment after gets the segment ahead of its direction
@@ -813,24 +839,12 @@ void travelerUpdate(vector<Cell> &pathToExit, GridPosition &pos, unsigned int in
 			travelerList[index].segmentList[i] = travelerList[index].segmentList[i - 1];
 			unsigned int currRow = travelerList[index].segmentList[i].row;
 			unsigned int currCol = travelerList[index].segmentList[i].col;
-			if (i == travelerList[index].segmentList.size() - 1)
-			{
-				prevTailRow = currRow;
-				prevTailCol = currCol;
-			}
 			grid[currRow][currCol] = SquareType::TRAVELER;
 		}
-
-		// if (grid[pathToExit[stepsTaken].row][pathToExit[stepsTaken].col] == SquareType::VERTICAL_PARTITION ||
-		//	grid[pathToExit[stepsTaken].row][pathToExit[stepsTaken].col] == SquareType::HORIZONTAL_PARTITION)
-		//{
-		//	handlePartition(pathToExit[stepsTaken]);
-		// }
 
 		travelerList[index].segmentList[0].dir = nextMoveDirection;
 		travelerList[index].segmentList[0].row = pathToExit[stepsTaken].row;
 		travelerList[index].segmentList[0].col = pathToExit[stepsTaken].col;
-
 		pos.row = pathToExit[stepsTaken].row;
 		pos.col = pathToExit[stepsTaken].col;
 		if (grid[pos.row][pos.col] != SquareType::EXIT)
@@ -840,13 +854,13 @@ void travelerUpdate(vector<Cell> &pathToExit, GridPosition &pos, unsigned int in
 
 		// cout << "Grid position (" << prevTailRow << "," << prevTailCol << ") is now marked as FREE_SQUARE\n";
 		//  set the previous position of the tail back to FREE_SQUARE
-		grid[prevTailRow][prevTailCol] = SquareType::FREE_SQUARE;
-
-		globalTravelerLock.unlock();
+		if (inBounds(prevTailRow, prevTailCol))
+		{
+			grid[prevTailRow][prevTailCol] = SquareType::FREE_SQUARE;
+		}
 
 		// release the lock for this traveler
 		travelerLocks[index].unlock();
-
 		stepsTaken++;
 	}
 }
@@ -901,213 +915,160 @@ void travelerExit(unsigned int index)
 	}
 }
 
-void handlePartition(Cell &nextMove)
+void shiftPartition(unsigned int currRow, unsigned int currCol, unsigned int timesCalled)
 {
+	// find which partition in the partition list the next move coords are in
+	int partitionIndex = findPartitionInList(currRow, currCol);
 
-	unsigned int currRow = nextMove.row;
-	unsigned int currCol = nextMove.col;
-
-	// determine if the partition the traveler has blocked on is horizontal or vertical
-	SquareType partitionType = grid[currRow][currCol];
-
-	if (partitionType == SquareType::VERTICAL_PARTITION)
+	// if this function has been called as many times as there are elements in the block lis
+	if (timesCalled == partitionList[partitionIndex].blockList.size() && partitionList[partitionIndex].moveDir == "down")
 	{
-		shiftVerticalPartition(currRow, currCol);
+		// reverse the direction the partition will be shifted
+		partitionList[partitionIndex].moveDir = "up";
 	}
-	else
+	else if (timesCalled == partitionList[partitionIndex].blockList.size() && partitionList[partitionIndex].moveDir == "up")
 	{
-		shiftHorizontalPartition(currRow, currCol);
+		partitionList[partitionIndex].moveDir = "down";
+	}
+	else if (timesCalled == partitionList[partitionIndex].blockList.size() && partitionList[partitionIndex].moveDir == "left")
+	{
+		partitionList[partitionIndex].moveDir = "right";
+	}
+	else if (timesCalled == partitionList[partitionIndex].blockList.size() && partitionList[partitionIndex].moveDir == "right")
+	{
+		partitionList[partitionIndex].moveDir = "left";
+	}
+
+	// default to shift down or if the move dir has been changed to down
+	if ((partitionList[partitionIndex].moveDir == "none" &&
+		 partitionList[partitionIndex].isVertical) ||
+		(partitionList[partitionIndex].moveDir == "down" && partitionList[partitionIndex].isVertical))
+	{
+		// to store the trailing index of this partition
+		unsigned int currMinRow = numRows;
+		unsigned int currMinCol = partitionList[partitionIndex].blockList[0].col;
+
+		// shift every block in the block list down by one
+		for (auto &cell : partitionList[partitionIndex].blockList)
+		{
+			// since we are moving down, the lowest number row is the trailing index
+			currMinRow = min(currMinRow, cell.row);
+			// add one to all rows to move down
+			cell.row += 1;
+			// if the new index does not go OOB
+			if (inBounds(cell.row, cell.col))
+			{
+				// change the grid location's type to a vertical partition
+				grid[cell.row][cell.col] = SquareType::VERTICAL_PARTITION;
+			}
+		}
+
+		// if the old trailing index is in bounds
+		if (inBounds(currMinRow, currMinCol))
+		{
+			// free that cell up
+			grid[currMinRow][currMinCol] = SquareType::FREE_SQUARE;
+		}
+
+		// reaffirm the direction
+		partitionList[partitionIndex].moveDir = "down";
+	}
+	/*
+	 * NOTE: THE PROCESS IS THE SAME BELOW, JUST FOR DIFFERENT DIRECTIONS.
+	 * ALSO, I KNOW HOW UGLY THIS FUNCTION IS HAHAHAHA.
+	 */
+	// shift up
+	else if (partitionList[partitionIndex].moveDir == "up" && partitionList[partitionIndex].isVertical)
+	{
+		unsigned int currMaxRow = 0;
+		unsigned int currMaxCol = partitionList[partitionIndex].blockList[0].col;
+
+		// shift every block in the block list up by one
+		for (auto &cell : partitionList[partitionIndex].blockList)
+		{
+			currMaxRow = max(currMaxRow, cell.row);
+			cell.row -= 1;
+			if (inBounds(cell.row, cell.col))
+			{
+				grid[cell.row][cell.col] = SquareType::VERTICAL_PARTITION;
+			}
+		}
+
+		if (inBounds(currMaxRow, currMaxCol))
+		{
+			grid[currMaxRow][currMaxCol] = SquareType::FREE_SQUARE;
+		}
+
+		partitionList[partitionIndex].moveDir = "up";
+	}
+	// shift left
+	else if (partitionList[partitionIndex].moveDir == "left" && !partitionList[partitionIndex].isVertical)
+	{
+		unsigned int currMaxRow = partitionList[partitionIndex].blockList[0].row;
+		unsigned int currMaxCol = 0;
+
+		for (auto &cell : partitionList[partitionIndex].blockList)
+		{
+			currMaxCol = max(currMaxCol, cell.col);
+			cell.col -= 1;
+			if (inBounds(cell.row, cell.col))
+			{
+				grid[cell.row][cell.col] = SquareType::HORIZONTAL_PARTITION;
+			}
+		}
+
+		if (inBounds(currMaxRow, currMaxCol))
+		{
+			grid[currMaxRow][currMaxCol] = SquareType::FREE_SQUARE;
+		}
+		partitionList[partitionIndex].moveDir = "left";
+	}
+	// shift right
+	// default for horizontal partitions
+	else if ((partitionList[partitionIndex].moveDir == "none" && !partitionList[partitionIndex].isVertical) || (partitionList[partitionIndex].moveDir == "right" && !partitionList[partitionIndex].isVertical))
+	{
+		unsigned int currMinRow = partitionList[partitionIndex].blockList[0].row;
+		unsigned int currMinCol = numCols;
+		for (auto &cell : partitionList[partitionIndex].blockList)
+		{
+			currMinCol = min(currMinCol, cell.col);
+			cell.col += 1;
+			if (inBounds(cell.row, cell.col))
+			{
+				grid[cell.row][cell.col] = SquareType::HORIZONTAL_PARTITION;
+			}
+		}
+
+		if (inBounds(currMinRow, currMinCol))
+		{
+			grid[currMinRow][currMinCol] = SquareType::FREE_SQUARE;
+		}
+
+		partitionList[partitionIndex].moveDir = "right";
 	}
 }
 
-void shiftVerticalPartition(unsigned int currRow, unsigned int currCol)
+int findPartitionInList(unsigned int currRow, unsigned int currCol)
 {
-	// walk to the top of the partition
-	while (grid[currRow][currCol] == SquareType::VERTICAL_PARTITION)
+	// for each partition in the partition list
+	for (size_t i = 0; i < partitionList.size(); i++)
 	{
-		currRow--;
-	}
-
-	unsigned int tempRow = currRow;
-	vector<GridPosition> cellsInPartition;
-
-	// count the length of the partition
-	while (grid[tempRow][currCol] == SquareType::VERTICAL_PARTITION)
-	{
-		tempRow++;
-		GridPosition temp{tempRow, currCol};
-		cellsInPartition.push_back(temp);
-	}
-
-	// difference gives us the length of the partition
-	unsigned int partitionLen = tempRow - currRow;
-	// find the midpoint of the partition
-	unsigned int middlePointLocal = partitionLen / 2;
-	// find the midpoint of the grid on the y axis
-	unsigned int middlePointGrid = numRows / 2;
-
-	// this will determine which way the partition shifts
-	bool goUp;
-
-	// if the middle point of the partition is less than the midpoint of the grid
-	if (middlePointLocal < middlePointGrid)
-	{
-		// we want to move it down
-		goUp = false;
-	}
-	else
-	{
-		// else we want to move it up
-		goUp = true;
-	}
-
-	// if we are moving it upwards
-	if (goUp)
-	{
-		unsigned int numShifts = 0;
-		while (numShifts < partitionLen &&
-			   inBounds(cellsInPartition[cellsInPartition.size() - 1].row, cellsInPartition[cellsInPartition.size() - 1].col) && inBounds(cellsInPartition[0].row - 1, cellsInPartition[0].col) && grid[cellsInPartition[0].row - 1][cellsInPartition[0].col] != SquareType::TRAVELER)
+		// search through the list of blocks that makes up the partition
+		for (size_t j = 0; j < partitionList[i].blockList.size(); j++)
 		{
-
-			unsigned int prevTailRow = cellsInPartition[cellsInPartition.size() - 1].row;
-			unsigned int prevTailCol = cellsInPartition[cellsInPartition.size() - 1].col;
-
-			vector<GridPosition> tempPartition = cellsInPartition;
-			for (size_t i = 1; i < tempPartition.size(); i++)
+			// when we find the block that matches the current next move of the traveler
+			if (partitionList[i].blockList[j].row == currRow && partitionList[i].blockList[j].col == currCol)
 			{
-				cellsInPartition[i] = tempPartition[i - 1];
-				grid[cellsInPartition[i].row][cellsInPartition[i].col] = SquareType::VERTICAL_PARTITION;
+				// return the index of this partition in the partition list
+				return i;
 			}
-			cellsInPartition[0].row--;
-			grid[cellsInPartition[0].row][cellsInPartition[0].col] = SquareType::VERTICAL_PARTITION;
-
-			grid[prevTailRow][prevTailCol] = SquareType::FREE_SQUARE;
 		}
 	}
-	else
-	{
-		unsigned int numShifts = 0;
-		while (numShifts < partitionLen &&
-			   inBounds(cellsInPartition[cellsInPartition.size() - 1].row, cellsInPartition[cellsInPartition.size() - 1].col) && inBounds(cellsInPartition[0].row + 1, cellsInPartition[0].col) && grid[cellsInPartition[0].row + 1][cellsInPartition[0].col] != SquareType::TRAVELER)
-		{
-			unsigned int prevTailRow = cellsInPartition[0].row;
-			unsigned int prevTailCol = cellsInPartition[0].col;
 
-			vector<GridPosition> tempPartition = cellsInPartition;
-			for (size_t i = tempPartition.size() - 1; i > 0; i--)
-			{
-				cellsInPartition[i - 1] = tempPartition[i];
-				grid[cellsInPartition[i - 1].row][cellsInPartition[i - 1].col] = SquareType::VERTICAL_PARTITION;
-			}
-			cellsInPartition[cellsInPartition.size() - 1].row++;
-			grid[cellsInPartition[cellsInPartition.size() - 1].row][cellsInPartition[cellsInPartition.size() - 1].col] = SquareType::VERTICAL_PARTITION;
-
-			grid[prevTailRow][prevTailCol] = SquareType::FREE_SQUARE;
-		}
-	}
-}
-
-void shiftHorizontalPartition(unsigned int currRow, unsigned int currCol)
-{
-	// walk to the top of the partition
-	while (grid[currRow][currCol] == SquareType::HORIZONTAL_PARTITION)
-	{
-		currCol--;
-	}
-
-	unsigned int tempCol = currRow;
-	vector<GridPosition> cellsInPartition;
-
-	// count the length of the partition
-	while (grid[currRow][tempCol] == SquareType::HORIZONTAL_PARTITION)
-	{
-		tempCol++;
-		GridPosition temp{currRow, tempCol};
-		cellsInPartition.push_back(temp);
-	}
-
-	// difference gives us the length of the partition
-	unsigned int partitionLen = tempCol - currCol;
-	// find the midpoint of the partition
-	unsigned int middlePointLocal = partitionLen / 2;
-	// find the midpoint of the grid on the y axis
-	unsigned int middlePointGrid = numCols / 2;
-
-	// this will determine which way the partition shifts
-	bool goLeft;
-
-	// if the middle point of the partition is less than the midpoint of the grid
-	if (middlePointLocal < middlePointGrid)
-	{
-		// we want to move it to the right
-		goLeft = false;
-	}
-	else
-	{
-		// else we want to move it left
-		goLeft = true;
-	}
-
-	// if we are moving it to the right
-	if (goLeft)
-	{
-		unsigned int numShifts = 0;
-		while (numShifts < partitionLen &&
-			   inBounds(cellsInPartition[0].row, cellsInPartition[0].col - 1) && inBounds(cellsInPartition[cellsInPartition.size() - 1].row, cellsInPartition[cellsInPartition.size() - 1].col) && grid[cellsInPartition[0].row][cellsInPartition[0].col - 1] != SquareType::TRAVELER)
-		{
-
-			unsigned int prevTailRow = cellsInPartition[cellsInPartition.size() - 1].row;
-			unsigned int prevTailCol = cellsInPartition[cellsInPartition.size() - 1].col;
-
-			vector<GridPosition> tempPartition = cellsInPartition;
-			for (size_t i = 1; i < tempPartition.size(); i++)
-			{
-				cellsInPartition[i] = tempPartition[i - 1];
-				grid[cellsInPartition[i].row][cellsInPartition[i].col] = SquareType::HORIZONTAL_PARTITION;
-			}
-			cellsInPartition[0].col--;
-
-			if (inBounds(cellsInPartition[0].row, cellsInPartition[0].col))
-			{
-				grid[cellsInPartition[0].row][cellsInPartition[0].col] = SquareType::HORIZONTAL_PARTITION;
-			}
-			else
-			{
-				break;
-			}
-
-			grid[prevTailRow][prevTailCol] = SquareType::FREE_SQUARE;
-		}
-	}
-	else
-	{
-		unsigned int numShifts = 0;
-		while (numShifts < partitionLen &&
-			   inBounds(cellsInPartition[0].row, cellsInPartition[0].col + 1) && grid[cellsInPartition[0].row][cellsInPartition[0].col + 1] != SquareType::TRAVELER)
-		{
-			unsigned int prevTailRow = cellsInPartition[0].row;
-			unsigned int prevTailCol = cellsInPartition[0].col;
-
-			vector<GridPosition> tempPartition = cellsInPartition;
-			for (size_t i = tempPartition.size() - 1; i > 0; i--)
-			{
-				cellsInPartition[i - 1] = tempPartition[i];
-				grid[cellsInPartition[i - 1].row][cellsInPartition[i - 1].col] = SquareType::HORIZONTAL_PARTITION;
-			}
-			cellsInPartition[cellsInPartition.size() - 1].col++;
-
-			if (inBounds(cellsInPartition[cellsInPartition.size() - 1].row, cellsInPartition[cellsInPartition.size() - 1].col))
-			{
-				grid[cellsInPartition[cellsInPartition.size() - 1].row][cellsInPartition[cellsInPartition.size() - 1].col] = SquareType::HORIZONTAL_PARTITION;
-			}
-			else
-			{
-				break;
-			}
-
-			grid[prevTailRow][prevTailCol] = SquareType::FREE_SQUARE;
-		}
-	}
+	// otherwise, return negative one
+	// this shouldn't happen since the current next move of the traveler should always
+	// be in bounds and blocked by a cell of one of the two partition types
+	return -1;
 }
 
 void generateWalls(void)
@@ -1247,7 +1208,9 @@ void generatePartitions(void)
 						grid[row][col] = SquareType::VERTICAL_PARTITION;
 						GridPosition pos = {row, col};
 						part.blockList.push_back(pos);
+						part.moveDir = "none";
 					}
+					partitionList.push_back(part);
 				}
 			}
 		}
@@ -1285,7 +1248,9 @@ void generatePartitions(void)
 						grid[row][col] = SquareType::HORIZONTAL_PARTITION;
 						GridPosition pos = {row, col};
 						part.blockList.push_back(pos);
+						part.moveDir = "none";
 					}
+					partitionList.push_back(part);
 				}
 			}
 		}

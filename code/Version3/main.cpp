@@ -88,7 +88,7 @@ thread **TravelerThreads;
 //	travelers' sleep time between moves (in microseconds)
 const int MIN_SLEEP_TIME = 1000;
 int travelerSleepTime = 150000;
-bool displayGridTraveler = false;
+bool displayGridTraveler = true;
 
 //	An array of C-string where you can store things you want displayed
 //	in the state pane to display (for debugging purposes?)
@@ -696,10 +696,15 @@ vector<Cell> buildPath(const GridPosition &source, Cell **cellInfo)
 	// as long as the current cell is not the start of the path
 	while (currCell != startCell)
 	{
-		// add that cell to the path
-		pathToExit.push_back(*currCell);
-		// move to the parent of the current cell
-		currCell = currCell->parent;
+		// sometimes the parent of the current cell can be nullptr
+		// add check to ensure we are not attempting to acess data member nullptr
+		if (currCell != nullptr)
+		{
+			// add that cell to the path
+			pathToExit.push_back(*currCell);
+			// move to the parent of the current cell
+			currCell = currCell->parent;
+		}
 	}
 
 	// return the full path in backwards order
@@ -754,12 +759,22 @@ void travelerUpdate(vector<Cell> &pathToExit, GridPosition &pos, unsigned int in
 	{
 		usleep(travelerSleepTime);
 
+		// if the next step in the path is currently occupied by another traveler
+		if (grid[pathToExit[stepsTaken].row][pathToExit[stepsTaken].col] == SquareType::TRAVELER)
+		{
+			// wait until the next step is clear
+			continue;
+		}
+
 		// this ensures only one traveler can update it's position/
 		// render the change in position at any given time
 		globalTravelerLock.lock();
 
+		// if the number of steps until we add a new segment has elapsed and
+		//  we are not at the end of the path
 		if (stepsTaken % stepsUntilAddSegment == 0 && !atEndOfPath(index))
 		{
+			// add a new segment to the traveler
 			TravelerSegment newSeg = newTravelerSegment(currSeg, canAddSegment);
 			travelerList[index].segmentList.push_back(newSeg);
 			currSeg = newSeg;
@@ -795,7 +810,8 @@ void travelerUpdate(vector<Cell> &pathToExit, GridPosition &pos, unsigned int in
 		// We calculate the new direction for the head of the traveler
 
 		// to store index of where the tail was before positional update
-		unsigned int prevTailRow, prevTailCol;
+		unsigned int prevTailRow = travelerList[index].segmentList[travelerList[index].segmentList.size() - 1].row;
+		unsigned int prevTailCol = travelerList[index].segmentList[travelerList[index].segmentList.size() - 1].col;
 
 		// Next, if The traveler is going to have more than 1 segment,
 		// Then each segment after gets the segment ahead of its direction
@@ -804,11 +820,6 @@ void travelerUpdate(vector<Cell> &pathToExit, GridPosition &pos, unsigned int in
 			travelerList[index].segmentList[i] = travelerList[index].segmentList[i - 1];
 			unsigned int currRow = travelerList[index].segmentList[i].row;
 			unsigned int currCol = travelerList[index].segmentList[i].col;
-			if (i == travelerList[index].segmentList.size() - 1)
-			{
-				prevTailRow = currRow;
-				prevTailCol = currCol;
-			}
 			grid[currRow][currCol] = SquareType::TRAVELER;
 		}
 
@@ -824,9 +835,10 @@ void travelerUpdate(vector<Cell> &pathToExit, GridPosition &pos, unsigned int in
 
 		// cout << "Grid position (" << prevTailRow << "," << prevTailCol << ") is now marked as FREE_SQUARE\n";
 		//  set the previous position of the tail back to FREE_SQUARE
-		grid[prevTailRow][prevTailCol] = SquareType::FREE_SQUARE;
-
-		drawTraveler(travelerList[index]);
+		if (inBounds(prevTailRow, prevTailCol))
+		{
+			grid[prevTailRow][prevTailCol] = SquareType::FREE_SQUARE;
+		}
 
 		// release the lock so other threads can acquire it
 		globalTravelerLock.unlock();
@@ -875,8 +887,7 @@ void travelerExit(unsigned int index)
 		// remove the front
 		travelerList[index].segmentList.erase(travelerList[index].segmentList.begin());
 
-		drawTraveler(travelerList[index]);
-		// release the lock so other threads can acquire it
+		//  release the lock so other threads can acquire it
 		globalTravelerLock.unlock();
 	}
 }

@@ -27,7 +27,6 @@ enum class Direction
 	NUM_DIRECTIONS
 };
 
-
 /**	Grid square types for this simulation
  */
 enum class SquareType
@@ -54,10 +53,10 @@ struct GridPosition
 	 */
 	unsigned int col;
 
-	bool operator<(const GridPosition& t) const {
-        return (this->row < t.row);
-    }
-
+	bool operator<(const GridPosition &t) const
+	{
+		return (this->row < t.row);
+	}
 };
 
 /**
@@ -75,9 +74,7 @@ struct TravelerSegment
 	 */
 	Direction prevDir;
 	Direction dir;
-
 };
-
 
 /**
  *	Data type for storing all information about a traveler
@@ -88,18 +85,17 @@ struct Traveler
 	/**	The traveler's index
 	 */
 	unsigned int index;
-	
+
 	/**	The color assigned to the traveler, in rgba format
 	 */
 	float rgba[4];
-	
+
 	/**	The list of segments that form the 'tail' of the traveler
 	 */
 	std::vector<TravelerSegment> segmentList;
 
-	//the starting position of the traveler
+	// the starting position of the traveler
 	GridPosition startingPos;
-	
 };
 
 /**
@@ -111,26 +107,25 @@ struct SlidingPartition
 	 */
 	bool isVertical;
 
+	std::string moveDir;
+
 	/**	The blocks making up the partition, listed
 	 *		top-to-bottom for a vertical list
 	 *		left-to-right for a horizontal list
 	 */
 	std::vector<GridPosition> blockList;
-
 };
 
-
 /**	Ugly little function to return a direction as a string
-*	@param dir the direction
-*	@return the direction in readable string form
-*/
-std::string dirStr(const Direction& dir);
+ *	@param dir the direction
+ *	@return the direction in readable string form
+ */
+std::string dirStr(const Direction &dir);
 
 /**	Ugly little function to return a square type as a string
-*	@param type the suqare type
-*	@return the square type in readable string form
-*/
-std::string typeStr(const SquareType& type);
-
+ *	@param type the suqare type
+ *	@return the square type in readable string form
+ */
+std::string typeStr(const SquareType &type);
 
 #endif //	DATAS_TYPES_H

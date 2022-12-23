@@ -1,3 +1,3 @@
 g++ -g3 -g -Wall -fsanitize=undefined,address main.cpp gl_frontEnd.cpp utils.cpp -lm -lGL -lglut -lpthread -o Test
 
-./Test 45 40 5 10
+./Test 45 40 15 10

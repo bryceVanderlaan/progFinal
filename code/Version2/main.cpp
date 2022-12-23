@@ -14,6 +14,7 @@
 #include <list>
 #include <cstdio>
 #include <cstdlib>
+
 #include <ctime>
 #include <climits>
 #include <bits/stdc++.h>
@@ -674,10 +675,15 @@ vector<Cell> buildPath(const GridPosition &source, Cell **cellInfo)
 	// as long as the current cell is not the start of the path
 	while (currCell != startCell)
 	{
-		// add that cell to the path
-		pathToExit.push_back(*currCell);
-		// move to the parent of the current cell
-		currCell = currCell->parent;
+		// sometimes the parent of the current cell can be nullptr
+		// add check to ensure we are not attempting to acess data member nullptr
+		if (currCell != nullptr)
+		{
+			// add that cell to the path
+			pathToExit.push_back(*currCell);
+			// move to the parent of the current cell
+			currCell = currCell->parent;
+		}
 	}
 
 	// return the full path in backwards order
@@ -782,7 +788,6 @@ void travelerUpdate(vector<Cell> &pathToExit, GridPosition &pos, unsigned int in
 		pos.row = pathToExit[stepsTaken].row;
 		pos.col = pathToExit[stepsTaken].col;
 
-		drawTraveler(travelerList[index]);
 		stepsTaken++;
 	}
 }
@@ -806,8 +811,6 @@ void travelerExit(unsigned int index)
 
 		// remove the front
 		travelerList[index].segmentList.erase(travelerList[index].segmentList.begin());
-
-		drawTraveler(travelerList[index]);
 	}
 }
 
